@@ -50,10 +50,16 @@
 #include "sl_rail_util_rssi.h"
 #include "rail.h"
 #include <ieee802154/rail_ieee802154.h>
+#include "sl_rail_util_init_inst0_config.h"
+#include <sli_rail_util_callbacks.h>
+#include "sl_rail_util_protocol.h"
+#include <sl_flex_rail_package_assistant.h>
+#include "sl_flex_rail_package_assistant_config.h"
+#include "rail_config_IEEE802154_GB920MHz.h"
 
 /* Log configuration */
 #include "sys/log.h"
-#define LOG_MODULE "EFR32-2p4GHz"
+#define LOG_MODULE "EFR32-GB920"
 #define LOG_LEVEL LOG_LEVEL_NONE
 
 enum {
@@ -69,28 +75,26 @@ typedef enum {
   TX_ERROR
 } tx_status_t;
 
-#define CHANNEL_MIN            11
-#define CHANNEL_MAX            26
+/* 920.80 Mhz - 932.80 Mhz, channel space 600kHz */
+#define CHANNEL_MIN            0x00
+#define CHANNEL_MAX            0x14
 #define PTI_ENABLED            false
 
-extern const RAIL_ChannelConfig_t *const RAIL_IEEE802154_Phy2p4GHz;
-
 static void rail_events_cb(RAIL_Handle_t rail_handle, RAIL_Events_t events);
-static RAILSched_Config_t rail_sched_config;
 static RAIL_Config_t rail_config = {
   .eventsCallback = &rail_events_cb,
-  .scheduler = &rail_sched_config,
+  // Other fields are ignored nowadays
 };
 static union {
   RAIL_FIFO_ALIGNMENT_TYPE align[RAIL_FIFO_SIZE / RAIL_FIFO_ALIGNMENT];
   uint8_t fifo[RAIL_FIFO_SIZE];
 } sRailRxFifo;
-static RAIL_Handle_t sRailHandle = NULL;
+static RAIL_Handle_t sRailHandle = RAIL_EFR32_HANDLE;
 static RAIL_Time_t last_rx_time = 0;
 static int16_t last_rssi;
 static int16_t last_lqi;
-/* The process for receiving packets */
-PROCESS(efr32_radio_process, "efr32 radio driver");
+/* The process for receiving packets. */
+PROCESS(efr32_radio_process_920, "efr32 radio driver");
 static uint8_t send_on_cca = 1;
 static uint8_t poll_mode = 0;
 static RAIL_DataConfig_t data_config = {
@@ -102,7 +106,7 @@ static RAIL_DataConfig_t data_config = {
 static RAIL_IEEE802154_Config_t rail_ieee802154_config = {
   .addresses = NULL,
   .ackConfig = {
-    .enable = 1,
+    .enable = true,
     .ackTimeout = 672,
     .rxTransitions = {
       .success = RAIL_RF_STATE_RX,
@@ -117,15 +121,17 @@ static RAIL_IEEE802154_Config_t rail_ieee802154_config = {
     .idleToRx = 100,
     .idleToTx = 100,
     .rxToTx = 192,
-    .txToRx = 192 - 10,
-    .rxSearchTimeout = 0,
-    .txToRxSearchTimeout = 0,
+    .txToRx = 192 - 10, 
+     // Make txToRx slightly lower than desired to make sure we get to
+     // RX in time
+    .rxSearchTimeout = 0, // Not used
+    .txToRxSearchTimeout = 0, // Not used
   },
   .framesMask = RAIL_IEEE802154_ACCEPT_STANDARD_FRAMES
     | RAIL_IEEE802154_ACCEPT_ACK_FRAMES,
-  .promiscuousMode = 0,
-  .isPanCoordinator = 0,
-  .defaultFramePendingInOutgoingAcks = 0,
+  .promiscuousMode = false, // Enable format and address filtering.
+  .isPanCoordinator = false,
+  .defaultFramePendingInOutgoingAcks = false,
 };
 static union {
   RAIL_FIFO_ALIGNMENT_TYPE align[RAIL_FIFO_SIZE / RAIL_FIFO_ALIGNMENT];
@@ -135,20 +141,20 @@ static uint16_t panid = 0xabcd;
 static int channel = IEEE802154_DEFAULT_CHANNEL;
 static int cca_threshold = -85;
 static RAIL_TxOptions_t txOptions = RAIL_TX_OPTIONS_DEFAULT;
-volatile tx_status_t tx_status;
-volatile bool is_receiving = false;
+static volatile tx_status_t tx_status;
+static volatile bool is_receiving = false;
 /*---------------------------------------------------------------------------*/
-RAIL_Status_t
-RAILCb_SetupRxFifo(RAIL_Handle_t railHandle)
+static RAIL_Status_t
+setupRxFifo(RAIL_Handle_t railHandle)
 {
   uint16_t rxFifoSize = RAIL_FIFO_SIZE;
   RAIL_Status_t status = RAIL_SetRxFifo(railHandle, sRailRxFifo.fifo, &rxFifoSize);
   if(rxFifoSize != RAIL_FIFO_SIZE) {
-    /* We set up an incorrect FIFO size */
+    /* We set up an incorrect FIFO size. */
     return RAIL_STATUS_INVALID_PARAMETER;
   }
   if(status == RAIL_STATUS_INVALID_STATE) {
-    /* Allow failures due to multiprotocol */
+    /* Allow failures due to multiprotocol. */
     return RAIL_STATUS_NO_ERROR;
   }
   return status;
@@ -186,7 +192,7 @@ configure_radio_interrupts(void)
 static void
 handle_receive(void)
 {
-  RAIL_RxPacketHandle_t rx_packet_handle;
+  RAIL_RxPacketHandle_t rx_packet_handle = RAIL_RX_PACKET_HANDLE_INVALID;
   RAIL_RxPacketDetails_t packet_details;
   RAIL_RxPacketInfo_t packet_info;
   RAIL_Status_t rail_status;
@@ -209,10 +215,15 @@ handle_receive(void)
     return;
   }
 
-  length = packet_info.packetBytes - 1;
+  length = packet_info.packetBytes - 2;
   LOG_INFO("EFR32 Radio: rcv:%d\n", length);
 
   /* skip length byte */
+  packet_info.firstPortionData++;
+  packet_info.firstPortionBytes--;
+  packet_info.packetBytes--;
+
+  /* Skip one more length byte, SUN_FSK */
   packet_info.firstPortionData++;
   packet_info.firstPortionBytes--;
   packet_info.packetBytes--;
@@ -236,7 +247,7 @@ handle_receive(void)
     LOG_INFO("EFR32 Radio: Could not allocate rx_buf\n");
   }
 
-  /* after the copy of the packet, the RX packet can be release for RAIL */
+  /* After the copy of the packet, the RX packet can be release for RAIL */
   rail_status = RAIL_ReleaseRxPacket(sRailHandle, rx_packet_handle);
   if(rail_status != RAIL_STATUS_NO_ERROR) {
     LOG_WARN("RAIL_ReleaseRxPacket() result:%d\n", rail_status);
@@ -264,13 +275,13 @@ rail_events_cb(RAIL_Handle_t rail_handle, RAIL_Events_t events)
       RAIL_HoldRxPacket(rail_handle);
       if(!poll_mode) {
         LOG_INFO("EFR32 Radio: Receive event - poll.\n");
-        process_poll(&efr32_radio_process);
+        process_poll(&efr32_radio_process_920);
       }
     }
   }
 
   if(events & RAIL_EVENT_TX_PACKET_SENT) {
-    LOG_INFO("EFR32 Radio: packet sent\n");
+    LOG_INFO("EFR32 Radio: packet sent.\n");
     tx_status = TX_SENT;
   }
 
@@ -305,15 +316,15 @@ init(void)
   NVIC_SetPriority(AGC_IRQn, CORE_INTERRUPT_HIGHEST_PRIORITY);
   NVIC_SetPriority(PROTIMER_IRQn, CORE_INTERRUPT_HIGHEST_PRIORITY);
   NVIC_SetPriority(SYNTH_IRQn, CORE_INTERRUPT_HIGHEST_PRIORITY);
- 
+  
   sl_rail_util_dma_init();
   sl_rail_util_pa_init();
   sl_rail_util_pti_init();
-  sl_rail_util_rf_path_init();
-  sl_rail_util_rf_path_switch_init();
   sl_rail_util_rssi_init();
+  sl_rail_util_rf_path_switch_init();
+  sl_rail_util_rf_path_init();
 
-  /* initializes the RAIL core */
+  /* Initializes the RAIL core. */
   sRailHandle = RAIL_Init(&rail_config, NULL);
   if(sRailHandle == NULL) {
     LOG_ERR("RAIL_Init failed, return value: NULL\n");
@@ -327,16 +338,16 @@ init(void)
   }
 
   status = RAIL_ConfigData(sRailHandle, &data_config);
-
   if(status != RAIL_STATUS_NO_ERROR) {
     LOG_ERR("RAIL_ConfigData failed, return value: %d\n", status);
     return 0;
   }
 
-  /* configures the channels */
-  (void)RAIL_ConfigChannels(sRailHandle,
-                            RAIL_IEEE802154_Phy2p4GHz,
-                            &sl_rail_util_pa_on_channel_config_change);
+  status = RAIL_ConfigData(sRailHandle, &data_config);
+  if(status != RAIL_STATUS_NO_ERROR) {
+    LOG_ERR("RAIL_ConfigData failed, return value: %d\n", status);
+    return 0;
+  }
 
   status = RAIL_IEEE802154_Init(sRailHandle, &rail_ieee802154_config);
   if(status != RAIL_STATUS_NO_ERROR) {
@@ -344,10 +355,25 @@ init(void)
     return 0;
   }
 
-  status = RAIL_IEEE802154_Config2p4GHzRadio(sRailHandle);
+
+  /* Configures the channels. */
+  const RAIL_ChannelConfig_t *channel_config = NULL;
+  channel_config = channelConfigs[SL_RAIL_UTIL_INIT_PROTOCOL_PROPRIETARY_INST0_INDEX];
+  (void)RAIL_ConfigChannels(sRailHandle,
+                            channel_config,
+                            &sl_rail_util_pa_on_channel_config_change);
+
+ /*
+ * Initialize RAIL for IEEE802.15.4 features.
+ *
+ * - Enables IEEE802154 hardware acceleration
+ * - Configures RAIL Auto ACK functionality
+ * - Configures RAIL Address Filter for 802.15.4 address filtering
+ */
+ status = RAIL_IEEE802154_Init(sRailHandle, &rail_ieee802154_config);
   if(status != RAIL_STATUS_NO_ERROR) {
     (void)RAIL_IEEE802154_Deinit(sRailHandle);
-    LOG_ERR("RAIL_IEEE802154_Config2p4GHzRadio failed, return value: %d\n", status);
+    LOG_ERR("RAIL_IEEE802154_Init failed, return value: %d\n", status);
     return 0;
   }
 
@@ -362,20 +388,37 @@ init(void)
   if(status != RAIL_STATUS_NO_ERROR) {
     LOG_ERR("RAIL_IEEE802154_ConfigEOptions failed, return value: %d\n", status);
     return 0;
-  }
+  }  
 
+  /*
+   * An option to enable/disable 802.15.4G-2012 features needed for GB868.
+   * Normally RAIL supports 802.15.4-2003 and -2006 radio configurations 
+   * that have the single-byte PHY header allowing frames up to 128 bytes in size.
+   * This feature must be enabled for 802.15.4G-2012 or 802.15.4-2015 SUN PHY 
+   * radio configurations with the two-byte bit-reversed-length PHY header format.
+   */
+  status = RAIL_IEEE802154_ConfigGOptions(sRailHandle,
+                                          RAIL_IEEE802154_G_OPTION_GB868,
+                                          RAIL_IEEE802154_G_OPTION_GB868);
+
+  if(status != RAIL_STATUS_NO_ERROR) {
+    LOG_ERR("RAIL_IEEE802154_ConfigGOptions failed, return value: %d\n", status);
+    return 0;
+  }  
+
+  /* Initialize RAIL calibration. */
   status = RAIL_ConfigCal(sRailHandle,
                           0U
                           | (0
                              ? RAIL_CAL_TEMP : 0U)
                           | (0
                              ? RAIL_CAL_ONETIME : 0U));
-
   if(status != RAIL_STATUS_NO_ERROR) {
     LOG_ERR("RAIL_ConfigCal failed, return value: %d\n", status);
     return 0;
   }
 
+  /* Config events. */
   if(!configure_radio_interrupts()) {
     return 0;
   }
@@ -390,6 +433,14 @@ init(void)
   NETSTACK_RADIO.set_value(RADIO_PARAM_16BIT_ADDR, short_addr);
   NETSTACK_RADIO.set_object(RADIO_PARAM_64BIT_ADDR, &system_number, sizeof(system_number));
 
+  /* Setup Rx Fifo */
+  status = setupRxFifo(sRailHandle);
+  if(status != RAIL_STATUS_NO_ERROR) {
+    LOG_ERR("setupRxFifo failed, return value: %d\n", status);
+    return 0;
+  }
+
+  /* Setup Tx Fifo */
   allocated_tx_fifo_size = RAIL_SetTxFifo(sRailHandle, sRailTxFifo.fifo,
                                           0u, RAIL_FIFO_SIZE);
 
@@ -413,7 +464,7 @@ init(void)
     }
   }
 
-  process_start(&efr32_radio_process, NULL);
+  process_start(&efr32_radio_process_920, NULL);
 
   return 0;
 }
@@ -424,7 +475,6 @@ get_value(radio_param_t param, radio_value_t *value)
   if(!value) {
     return RADIO_RESULT_INVALID_VALUE;
   }
-
   switch(param) {
   case RADIO_PARAM_PAN_ID:
     *value = panid;
@@ -433,7 +483,7 @@ get_value(radio_param_t param, radio_value_t *value)
     *value = channel;
     return RADIO_RESULT_OK;
   case RADIO_CONST_MAX_PAYLOAD_LEN:
-    *value = RAIL_FIFO_SIZE;
+    *value = RAIL_FIFO_SIZE - 4; /* -4 ? 127 max ? */
     return RADIO_RESULT_OK;
   case RADIO_PARAM_RX_MODE:
     *value = 0;
@@ -483,16 +533,16 @@ set_value(radio_param_t param, radio_value_t value)
       return RADIO_RESULT_INVALID_VALUE;
     }
     channel = value;
-    /* start receiving on that channel */
+    /* Start receiving on that channel. */
     const RAIL_Status_t status = RAIL_StartRx(sRailHandle, channel, NULL);
     if(status != RAIL_STATUS_NO_ERROR) {
       LOG_ERR("Could not start RX on channel %d\n", channel);
-      return RADIO_RESULT_ERROR;
+     return RADIO_RESULT_ERROR;
     }
     return RADIO_RESULT_OK;
   case RADIO_PARAM_PAN_ID:
     panid = value & 0xffff;
-    RAIL_IEEE802154_SetPanId(sRailHandle, panid, 0);
+    (void)RAIL_IEEE802154_SetPanId(sRailHandle, panid, 0);
     return RADIO_RESULT_OK;
   case RADIO_PARAM_16BIT_ADDR:
     (void)RAIL_IEEE802154_SetShortAddress(sRailHandle, value & 0xFFFF, 0);
@@ -571,13 +621,24 @@ channel_clear(void)
 static int
 prepare(const void *payload, unsigned short payload_len)
 {
-  uint8_t plen = (uint8_t)payload_len + 2;
   uint8_t *data = (uint8_t *)payload;
   int written = 0;
-  /* write the length byte */
-  written += RAIL_WriteTxFifo(sRailHandle, &plen, 1, true);
-  /* write the payload */
-  written += RAIL_WriteTxFifo(sRailHandle, payload, payload_len, false);
+
+  /* Pack frame */
+  uint16_t packet_size = 0U;
+  uint8_t tx_frame_buffer[256];
+  uint8_t fcsType = 0;    // WISUN_FSK_FCS_TYPE;
+  uint8_t whitening = 0;  // WISUN_FSK_WHITENING;
+  int16_t status = sl_flex_802154_packet_pack_sunfsk_2bytes_data_frame(fcsType,
+                                                      whitening,
+                                                      payload_len,
+                                                      data,
+                                                      &packet_size,
+                                                      tx_frame_buffer);
+  if(status != SL_FLEX_802154_PACKET_OK) {
+    LOG_ERR("802154_packet_pack_sunfsk status: %d failed\n", status);
+  }
+  written = RAIL_WriteTxFifo(sRailHandle, tx_frame_buffer, packet_size, true);
 
   LOG_INFO("EFR32 Radio - wrote %d bytes to TX fifo\n", written);
 
@@ -594,8 +655,16 @@ static int
 transmit(unsigned short transmit_len)
 {
   uint8_t ret = RADIO_TX_OK;
-  RAIL_CsmaConfig_t csmaConfig =
-    RAIL_CSMA_CONFIG_802_15_4_2003_2p4_GHz_OQPSK_CSMA;
+  /* CSMA/CA configuration structure for IEEE 502.15.4g */
+  RAIL_CsmaConfig_t csmaConfig_sub = {
+    .csmaMinBoExp = 3,      // 2^3-1 for 0..7 backoffs on 1st try
+    .csmaMaxBoExp = 5,      // 2^5-1 for 0..31 backoffs on 3rd+ tries
+    .csmaTries = 5,         // 5 tries overall (4 re-tries)
+    .ccaThreshold = -81,    // 10 dB above sensitivity
+    .ccaBackoff = 1160,     // 1ms+ ccaDuration
+    .ccaDuration = 160,     // 8 symbols at 20 us/symbol
+    .csmaTimeout = 0,       // no timeout
+  };
   RAIL_Status_t status;
 
   LOG_INFO("EFR32 Radio: Sending packet %d bytes\n", transmit_len);
@@ -606,7 +675,7 @@ transmit(unsigned short transmit_len)
     status = RAIL_StartCcaCsmaTx(sRailHandle,
                                  channel,
                                  txOptions,
-                                 &csmaConfig,
+                                 &csmaConfig_sub,
                                  NULL);
   } else {
     status = RAIL_StartTx(sRailHandle,
@@ -627,7 +696,7 @@ transmit(unsigned short transmit_len)
     RTIMER_BUSYWAIT_UNTIL((tx_status != TX_SENDING),
                           US_TO_RTIMERTICKS(RADIO_BYTE_AIR_TIME * frame_length + 300));
   } else {
-    /* Wait for the transmission. */
+    /* Wait for the end of transmission. */ // Loop ?
     while(tx_status == TX_SENDING);
   }
 
@@ -637,7 +706,7 @@ transmit(unsigned short transmit_len)
     LOG_INFO("EFR32: TX error %d\n", tx_status);
   }
 
-  /* always IDLE after transmission */
+  /* Always IDLE after transmission. */
   tx_status = TX_IDLE;
 
   return ret;
@@ -686,7 +755,7 @@ read(void *buf, unsigned short bufsize)
   }
   LOG_INFO("EFR32 Radio Read: %d\n", rx_buf->len);
   len = rx_buf->len;
-  /* Convert from rail time domain to rtimer domain */
+  /* Convert from rail time domain to rtimer domain. */
   last_rx_time = RTIMER_NOW() - US_TO_RTIMERTICKS(RAIL_GetTime() - rx_buf->timestamp);
   memcpy(buf, rx_buf->buf, len);
   last_rssi = rx_buf->rssi;
@@ -707,7 +776,7 @@ pending_packet(void)
   return has_packet();
 }
 /*---------------------------------------------------------------------------*/
-PROCESS_THREAD(efr32_radio_process, ev, data)
+PROCESS_THREAD(efr32_radio_process_920, ev, data)
 {
   int len;
 
@@ -723,15 +792,15 @@ PROCESS_THREAD(efr32_radio_process, ev, data)
       if(len > 0) {
         packetbuf_set_datalen(len);
         NETSTACK_MAC.input();
-        /* poll again to check if there is more to read out */
-        process_poll(&efr32_radio_process);
+        /* Poll again to check if there is more to read out. */
+        process_poll(&efr32_radio_process_920);
       }
     }
   }
   PROCESS_END();
 }
 /*---------------------------------------------------------------------------*/
-const struct radio_driver efr32_radio_driver_IEEE802154_2p4GHz = {
+const struct radio_driver efr32_radio_driver_IEEE802154_GB920MHz = {
   init,
   prepare,
   transmit,
