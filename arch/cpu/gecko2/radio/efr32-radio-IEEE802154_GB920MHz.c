@@ -103,11 +103,11 @@ static RAIL_DataConfig_t data_config = {
   .txMethod = PACKET_MODE,
   .rxMethod = PACKET_MODE,
 };
-static RAIL_IEEE802154_Config_t rail_ieee802154_config = {
+static RAIL_IEEE802154_Config_t rail_ieee802154_config = { // TODO
   .addresses = NULL,
   .ackConfig = {
     .enable = true,
-    .ackTimeout = 672,
+    .ackTimeout = 672*5,
     .rxTransitions = {
       .success = RAIL_RF_STATE_RX,
       .error = RAIL_RF_STATE_IDLE
@@ -624,11 +624,11 @@ prepare(const void *payload, unsigned short payload_len)
   uint8_t *data = (uint8_t *)payload;
   int written = 0;
 
-  /* Pack frame */
+  /* Pack frame. */
   uint16_t packet_size = 0U;
   uint8_t tx_frame_buffer[256];
   uint8_t fcsType = 0;    // WISUN_FSK_FCS_TYPE;
-  uint8_t whitening = 0;  // WISUN_FSK_WHITENING;
+  uint8_t whitening = 0;  // WISUN_FSK_WHITENING; // TODO
   int16_t status = sl_flex_802154_packet_pack_sunfsk_2bytes_data_frame(fcsType,
                                                       whitening,
                                                       payload_len,
@@ -655,7 +655,7 @@ static int
 transmit(unsigned short transmit_len)
 {
   uint8_t ret = RADIO_TX_OK;
-  /* CSMA/CA configuration structure for IEEE 502.15.4g */
+  /* CSMA/CA configuration structure for IEEE 502.15.4g */ // TODO
   RAIL_CsmaConfig_t csmaConfig_sub = {
     .csmaMinBoExp = 3,      // 2^3-1 for 0..7 backoffs on 1st try
     .csmaMaxBoExp = 5,      // 2^5-1 for 0..31 backoffs on 3rd+ tries
