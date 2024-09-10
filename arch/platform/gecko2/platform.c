@@ -33,9 +33,10 @@
  * @{
  *
  * \file
- *      Platform implementation for gecko
+ *      Platform implementation for gecko2
  * \author
  *      Yago Fontoura do Rosario <yago.rosario@hotmail.com.br>
+ *      Yevgen Gyl <yevgen.gyl@tii.ae>
  */
 /*---------------------------------------------------------------------------*/
 #include "contiki.h"
@@ -51,6 +52,7 @@
 #include "sl_board_control.h"
 #include "sl_power_manager.h"
 #include "sl_sleeptimer.h"
+#include "sl_mpu.h"
 
 #include "dev/gpio-hal.h"
 #include "dev/button-hal.h"
@@ -85,6 +87,7 @@ sl_platform_init_stage_two(void)
 {
   sl_board_configure_vcom();
   sl_sleeptimer_init();
+  sl_mpu_disable_execute_from_ram();
 }
 /*---------------------------------------------------------------------------*/
 void

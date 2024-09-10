@@ -1,9 +1,9 @@
 /***************************************************************************//**
  * @file
- * @brief DEVICE_INIT_DCDC Config
+ * @brief RAIL callbacks configuration header file.
  *******************************************************************************
  * # License
- * <b>Copyright 2022 Silicon Laboratories Inc. www.silabs.com</b>
+ * <b>Copyright 2021 Silicon Laboratories Inc. www.silabs.com</b>
  *******************************************************************************
  *
  * SPDX-License-Identifier: Zlib
@@ -28,31 +28,17 @@
  *
  ******************************************************************************/
 
-#ifndef SL_DEVICE_INIT_DCDC_CONFIG_H
-#define SL_DEVICE_INIT_DCDC_CONFIG_H
+#ifndef SL_RAIL_UTIL_CALLBACKS_CONFIG_H
+#define SL_RAIL_UTIL_CALLBACKS_CONFIG_H
 
 // <<< Use Configuration Wizard in Context Menu >>>
 
-// <q SL_DEVICE_INIT_DCDC_ENABLE> Enable DC/DC Converter
-// <i>
+// <h> RAIL Callbacks Configuration
+
+// <q SL_RAIL_UTIL_CALLBACKS_ASSERT_FAILED_OVERRIDE> Override weak internal RAIL callback RAILCb_AssertFailed()
 // <i> Default: 1
-#define SL_DEVICE_INIT_DCDC_ENABLE         1
+#define SL_RAIL_UTIL_CALLBACKS_ASSERT_FAILED_OVERRIDE 1
 
-// <q SL_DEVICE_INIT_DCDC_BYPASS> Set DC/DC Converter in Bypass Mode
-// <i>
-// <i> Default: 0
-#define SL_DEVICE_INIT_DCDC_BYPASS         0
-
-// <q SL_DEVICE_INIT_DCDC_PFMX_IPKVAL_OVERRIDE> Override for DCDC PFMX Mode Peak Current Setting
-// <i>
-// <i> Default: 1
-#define SL_DEVICE_INIT_DCDC_PFMX_IPKVAL_OVERRIDE  1
-
-// <o SL_DEVICE_INIT_DCDC_PFMX_IPKVAL> DCDC PFMX Mode Peak Current Setting <0-15>
-// <i>
-// <i> Default: DCDC_PFMXCTRL_IPKVAL_DEFAULT
-#define SL_DEVICE_INIT_DCDC_PFMX_IPKVAL    6
-
+// </h>
 // <<< end of configuration section >>>
-
-#endif // SL_DEVICE_INIT_DCDC_CONFIG_H
+#endif // SL_RAIL_UTIL_CALLBACKS_CONFIG_H

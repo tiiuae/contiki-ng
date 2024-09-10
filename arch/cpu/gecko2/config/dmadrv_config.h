@@ -1,69 +1,26 @@
-/***************************************************************************//**
- * @file
- * @brief DMADRV configuration file.
- *******************************************************************************
- * # License
- * <b>Copyright 2018 Silicon Laboratories Inc. www.silabs.com</b>
- *******************************************************************************
- *
- * SPDX-License-Identifier: Zlib
- *
- * The licensor of this software is Silicon Laboratories Inc.
- *
- * This software is provided 'as-is', without any express or implied
- * warranty. In no event will the authors be held liable for any damages
- * arising from the use of this software.
- *
- * Permission is granted to anyone to use this software for any purpose,
- * including commercial applications, and to alter it and redistribute it
- * freely, subject to the following restrictions:
- *
- * 1. The origin of this software must not be misrepresented; you must not
- *    claim that you wrote the original software. If you use this software
- *    in a product, an acknowledgment in the product documentation would be
- *    appreciated but is not required.
- * 2. Altered source versions must be plainly marked as such, and must not be
- *    misrepresented as being the original software.
- * 3. This notice may not be removed or altered from any source distribution.
- *
- ******************************************************************************/
-#ifndef __SILICON_LABS_DMADRV_CONFIG_H__
-#define __SILICON_LABS_DMADRV_CONFIG_H__
+#ifndef DMADRV_CONFIG_H
+#define DMADRV_CONFIG_H
 
-#include "em_device.h"
+// <<< Use Configuration Wizard in Context Menu >>>
 
-/***************************************************************************//**
- * @addtogroup dmadrv
- * @{
- ******************************************************************************/
+// <o EMDRV_DMADRV_DMA_IRQ_PRIORITY> DMA interrupt priority <0-15>
+// <i> Priority of the DMA interrupt. Smaller number equals higher priority.
+// <i> Default: 8
+#define EMDRV_DMADRV_DMA_IRQ_PRIORITY 8
 
-/// DMADRV DMA interrupt priority configuration option.
-/// Set DMA interrupt priority. Range is 0..7, 0 is highest priority.
-#ifndef EMDRV_DMADRV_DMA_IRQ_PRIORITY
-#if (__NVIC_PRIO_BITS == 2)
-#define EMDRV_DMADRV_DMA_IRQ_PRIORITY 3
-#else
-#define EMDRV_DMADRV_DMA_IRQ_PRIORITY 4
-#endif
-#endif
+// <o EMDRV_DMADRV_DMA_CH_COUNT> Number of available channels <1-8>
+// <i> Number of DMA channels supported by the driver. A lower channel count
+// <i> will reduce RAM memory footprint. The default is to support all channels
+// <i> on the device.
+// <i> Default: 8
+#define EMDRV_DMADRV_DMA_CH_COUNT 8
 
-/// DMADRV DMA channel priority configuration option.
-/// Set DMA channel priority. Range 0..EMDRV_DMADRV_DMA_CH_COUNT.
-/// On LDMA, this will configure channel 0 to CH_PRIORITY - 1 as fixed priority,
-/// and CH_PRIORITY to CH_COUNT as round-robin.
-/// On DMA, this will have no impact, since high priority is unuseable with
-/// peripherals.
-#ifndef EMDRV_DMADRV_DMA_CH_PRIORITY
+// <o EMDRV_DMADRV_DMA_CH_PRIORITY> Number of fixed priority channels
+// <i> This will configure channels [0, CH_PRIORITY - 1] as fixed priority,
+// <i> and channels [CH_PRIORITY, CH_COUNT] as round-robin.
+// <i> Default: 0
 #define EMDRV_DMADRV_DMA_CH_PRIORITY 0
-#endif
 
-/// DMADRV channel count configuration option.
-/// Number of DMA channels to support. A lower DMA channel count will reduce
-/// ram memory footprint.
-#ifndef EMDRV_DMADRV_DMA_CH_COUNT
-#define EMDRV_DMADRV_DMA_CH_COUNT DMA_CHAN_COUNT
-#endif
+// <<< end of configuration section >>>
 
-/** @} (end addtogroup dmadrv) */
-
-#endif /* __SILICON_LABS_DMADRV_CONFIG_H__ */
+#endif // DMADRV_CONFIG_H

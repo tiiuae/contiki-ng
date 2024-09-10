@@ -1,9 +1,9 @@
 /***************************************************************************//**
  * @file
- * @brief DEVICE_INIT_DCDC Config
+ * @brief
  *******************************************************************************
  * # License
- * <b>Copyright 2022 Silicon Laboratories Inc. www.silabs.com</b>
+ * <b>Copyright 2023 Silicon Laboratories Inc. www.silabs.com</b>
  *******************************************************************************
  *
  * SPDX-License-Identifier: Zlib
@@ -27,32 +27,33 @@
  * 3. This notice may not be removed or altered from any source distribution.
  *
  ******************************************************************************/
-
-#ifndef SL_DEVICE_INIT_DCDC_CONFIG_H
-#define SL_DEVICE_INIT_DCDC_CONFIG_H
+#ifndef SIMPLE_RAIL_CONFIG_H_
+#define SIMPLE_RAIL_CONFIG_H_
 
 // <<< Use Configuration Wizard in Context Menu >>>
 
-// <q SL_DEVICE_INIT_DCDC_ENABLE> Enable DC/DC Converter
-// <i>
-// <i> Default: 1
-#define SL_DEVICE_INIT_DCDC_ENABLE         1
+// <h> Size of the RAIL RX FIFO
+// <o SL_FLEX_RAIL_RX_FIFO_SIZE> Capacity of the RAIL RX FIFO
+// <128=> 128
+// <256=> 256
+// <512=> 512
+// <1024=> 1024
+// <2048=> 2048
+// <4096=> 4096
+// <i> Default: 256
+#define SL_FLEX_RAIL_RX_FIFO_SIZE  256
+// </h>
 
-// <q SL_DEVICE_INIT_DCDC_BYPASS> Set DC/DC Converter in Bypass Mode
-// <i>
-// <i> Default: 0
-#define SL_DEVICE_INIT_DCDC_BYPASS         0
+// <h> Size of the RAIL TX FIFO
+// <o SL_FLEX_RAIL_TX_FIFO_SIZE> Capacity of the RAIL TX FIFO
+// <128=> 128
+// <256=> 256
+// <512=> 512
+// <1024=> 1024
+// <2048=> 2048
+// <4096=> 4096
+// <i> Default: 256
+#define SL_FLEX_RAIL_TX_FIFO_SIZE  128
+// </h>
 
-// <q SL_DEVICE_INIT_DCDC_PFMX_IPKVAL_OVERRIDE> Override for DCDC PFMX Mode Peak Current Setting
-// <i>
-// <i> Default: 1
-#define SL_DEVICE_INIT_DCDC_PFMX_IPKVAL_OVERRIDE  1
-
-// <o SL_DEVICE_INIT_DCDC_PFMX_IPKVAL> DCDC PFMX Mode Peak Current Setting <0-15>
-// <i>
-// <i> Default: DCDC_PFMXCTRL_IPKVAL_DEFAULT
-#define SL_DEVICE_INIT_DCDC_PFMX_IPKVAL    6
-
-// <<< end of configuration section >>>
-
-#endif // SL_DEVICE_INIT_DCDC_CONFIG_H
+#endif /* SIMPLE_RAIL_CONFIG_H_ */
